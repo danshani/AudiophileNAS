@@ -236,23 +236,23 @@ class AudioAnalyzer:
     def save_report(self, output_file='audio_analysis_report.json'):
         """Save comprehensive analysis report"""
         
-	def convert_to_native(obj):
-    	"""Convert numpy types to Python native types"""
-    	if isinstance(obj, dict):
-        return {k: convert_to_native(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_to_native(item) for item in obj]
-    elif isinstance(obj, np.bool_):
-        return bool(obj)
-    elif isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    else:
-        return obj
-
+        def convert_to_native(obj):
+            """Convert numpy types to Python native types"""
+            if isinstance(obj, dict):
+                return {k: convert_to_native(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_to_native(item) for item in obj]
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            else:
+                return obj
+        
         report = {
             'total_files': len(self.analysis_results),
             'results': convert_to_native(self.analysis_results)
