@@ -3,7 +3,8 @@ Audio Repair Module Configuration
 """
 
 # Supported audio formats
-SUPPORTED_FORMATS = ['.flac', '.wav', '.mp3', '.m4a', '.aac', '.ogg', '.opus']
+SUPPORTED_FORMATS = ['.flac', '.wav', '.mp3', '.m4a', '.aac', '.ogg', '.opus', '.dsf', '.dff', '.ape', '.alac']
+
 
 # Scan settings
 MAX_FILE_SIZE_MB = 500
