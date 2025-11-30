@@ -1,0 +1,19 @@
+{
+  "scan_date": "2025-11-30T16:12:35.609823",
+  "directory": "test_audio",
+  "summary": {
+    "total_files": 1,
+    "scanned": 1,
+    "corrupted_count": 1,
+    "healthy_count": 0,
+    "errors_count": 0
+  },
+  "corrupted_files": [
+    {
+      "file": "test_audio/fake_audio.flac",
+      "error": "Cannot determine format of input 0:0 after EOF\n[af#0:0 @ 0x558c7143c0] Task finished with error code: -1094995529 (Invalid data found when processing input)\n[af#0:0 @ 0x558c7143c0] Terminating thread with return code -1094995529 (Invalid data found when processing input)\n[aost#0:0/pcm_s16le @ 0x558c7140d0] Could not open encoder before EOF\n[aost#0:0/pcm_s16le @ 0x558c7140d0] Task finished with error code: -22 (Invalid argument)\n[aost#0:0/pcm_s16le @ 0x558c7140d0] Terminating thread with return code -22 (Invalid argument)\n[out#0/null @ 0x558c713990] Nothing was written into output file, because at least one of its streams received no packets.",
+      "size_mb": 0.09765625
+    }
+  ],
+  "errors": []
+}
