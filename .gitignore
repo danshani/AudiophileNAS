@@ -1,0 +1,19 @@
+# Virtual Environment
+venv/
+env/
+*.pyc
+__pycache__/
+
+# Analysis outputs
+audio_analysis_report.json
+scan_report.json
+
+# Test files
+test_cases/
+test_audio/
+test_results.txt
+final_test.txt
+
+# IDE
+.vscode/
+.idea/
