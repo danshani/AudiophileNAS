@@ -11,12 +11,33 @@ import logging
 from typing import List
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# --- PATH FIXER (CRITICAL) ---
+# This block ensures imports work regardless of where the script is run from
+current_file = os.path.abspath(__file__)
+cli_dir = os.path.dirname(current_file)       # .../metadata/cli
+metadata_dir = os.path.dirname(cli_dir)       # .../metadata
+audio_repair_dir = os.path.dirname(metadata_dir) # .../audio-repair
 
-from services.metadata_service import MetadataService
-from writers.mutagen_writer import MutagenWriter
-from parsers.metadata_parser import MetadataParser
+# Add 'audio-repair' to python path so 'metadata' becomes a package
+if audio_repair_dir not in sys.path:
+    sys.path.insert(0, audio_repair_dir)
+
+# Now we can import safely using the package name 'metadata'
+try:
+    from metadata.services.metadata_service import MetadataService
+    from metadata.writers.mutagen_writer import MutagenWriter
+    from metadata.parsers.metadata_parser import MetadataParser
+except ImportError as e:
+    # If package import fails, try relative fallback (for direct runs)
+    sys.path.insert(0, metadata_dir)
+    try:
+        from services.metadata_service import MetadataService
+        from writers.mutagen_writer import MutagenWriter
+        from parsers.metadata_parser import MetadataParser
+    except ImportError as e2:
+        print(f"CRITICAL IMPORT ERROR: {e}")
+        print(f"FALLBACK ERROR: {e2}")
+        sys.exit(1)
 
 def setup_logging(verbose: bool = False):
     """Setup logging configuration."""
@@ -74,7 +95,7 @@ def main():
         '--extensions',
         nargs='+',
         default=['.flac', '.mp3', '.m4a', '.ogg', '.wav'],
-        help='Audio file extensions to process (default: .flac .mp3 .m4a .ogg .wav)'
+        help='Audio file extensions to process'
     )
     parser.add_argument(
         '--verbose',
@@ -89,7 +110,7 @@ def main():
     parser.add_argument(
         '--limit',
         type=int,
-        help='Limit the number of files to process for testing'
+        help='Limit the number of files to process'
     )
     
     args = parser.parse_args()
@@ -120,86 +141,69 @@ def main():
         logger.error("No audio files found to process")
         sys.exit(1)
     
-    # Apply limit if specified
+    # Apply limit
     if args.limit and args.limit < len(audio_files):
         audio_files = audio_files[:args.limit]
-        logger.info(f"Limited to {args.limit} files for testing")
+        logger.info(f"Limited to {args.limit} files")
     
     logger.info(f"Processing {len(audio_files)} audio files")
     
     try:
         # Initialize components
         metadata_service = MetadataService()
-        metadata_parser = MetadataParser()
+        # metadata_parser = MetadataParser() # Unused in main logic currently
         writer = MutagenWriter() if args.write else None
         
         results = {}
+        completed_count = 0
+        written_count = 0
         
         for i, file_path in enumerate(audio_files, 1):
             logger.info(f"Processing {i}/{len(audio_files)}: {os.path.basename(file_path)}")
             
             if args.dry_run:
-                # For dry run, just extract current metadata and show missing fields
-                current_metadata = metadata_parser.extract_metadata(file_path)
-                missing_fields = []  # TODO: implement missing field detection
-                
-                results[file_path] = {
-                    'current_metadata': current_metadata,
-                    'missing_fields': missing_fields,
-                    'status': 'dry_run'
-                }
-                
-                if missing_fields:
-                    print(f"\n{file_path}:")
-                    print(f"  Missing fields: {', '.join(missing_fields)}")
-                    print(f"  Current metadata: {current_metadata}")
-                else:
-                    print(f"\n{file_path}: Metadata already complete")
-                
+                # Dry run logic placeholder
+                print(f"\n{file_path}: [Dry Run]")
             else:
-                # Complete metadata
                 try:
-                    completed_metadata = metadata_service.process_file(file_path)
-                    results[file_path] = completed_metadata
+                    # Complete metadata
+                    completed_metadata = metadata_service.process_file(Path(file_path), write_metadata=False)
                     
-                    # Write metadata if requested
-                    if args.write and writer:
-                        # Convert to format expected by writer
-                        success = writer.write_metadata(file_path, completed_metadata, create_backup)
-                        results[file_path]['write_success'] = success
+                    if completed_metadata.success:
+                        completed_count += 1
+                        results[file_path] = completed_metadata.to_dict() if hasattr(completed_metadata, 'to_dict') else str(completed_metadata)
                         
+                        # Write metadata if requested
+                        if args.write and writer and completed_metadata.metadata:
+                            success = writer.write_metadata(file_path, completed_metadata.metadata, create_backup)
+                            if success:
+                                written_count += 1
+                    else:
+                        logger.warning(f"Failed to complete metadata: {completed_metadata.error}")
+
                 except Exception as e:
                     logger.error(f"Error processing {file_path}: {e}")
                     results[file_path] = {'error': str(e)}
         
-        # Save results to JSON if requested
+        # Save results to JSON
         if args.output:
             with open(args.output, 'w', encoding='utf-8') as f:
-                json.dump(results, f, indent=2, ensure_ascii=False)
+                # Simple serialization helper
+                json.dump(results, f, indent=2, default=str)
             logger.info(f"Results saved to: {args.output}")
         
-        # Print summary
-        if not args.dry_run:
-            completed_count = 0
-            written_count = 0
+        # Summary
+        print(f"\nSummary:")
+        print(f"  Files processed: {len(audio_files)}")
+        print(f"  Metadata found: {completed_count}")
+        if args.write:
+            print(f"  Files updated: {written_count}")
             
-            for file_path, metadata in results.items():
-                if 'error' not in metadata:
-                    completed_count += 1
-                if metadata.get('write_success'):
-                    written_count += 1
-            
-            print(f"\nSummary:")
-            print(f"  Files processed: {len(audio_files)}")
-            print(f"  Metadata completed: {completed_count}")
-            if args.write:
-                print(f"  Files written: {written_count}")
-        
     except KeyboardInterrupt:
         logger.info("Operation cancelled by user")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Critical Error: {e}")
         sys.exit(1)
 
 if __name__ == '__main__':
