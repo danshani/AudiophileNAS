@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Any
 import logging
 
+from typing import Dict, Any, List, Optional
 from ..core.interfaces import MetadataParserInterface
 from ..core.models import AudioMetadata
 
