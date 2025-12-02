@@ -1,19 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
 # Virtual Environment
 venv/
 env/
-*.pyc
-__pycache__/
-
-# Analysis outputs
-audio_analysis_report.json
-scan_report.json
-
-# Test files
-test_cases/
-test_audio/
-test_results.txt
-final_test.txt
+ENV/
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project Specific
+*.backup
+test_results*.json
+*_results.json
+batch_results.json
+genre_test*.json
+jazz_zoo*.json
+shiwa_results.json
+final_genre_test.json
+final_complete_results.json
+
+# Audio files (uncomment if you don't want to track test audio)
+# *.flac
+# *.mp3
+# *.wav
+# *.m4a
+# *.ogg
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Test outputs
+test_output/
+results/
+
+# Old analysis outputs
+audio_analysis_report.json
+scan_report.json

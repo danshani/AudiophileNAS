@@ -14,7 +14,9 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from metadata import MetadataCompleter, MetadataWriter, MetadataExtractor
+from services.metadata_service import MetadataService
+from writers.mutagen_writer import MutagenWriter
+from parsers.metadata_parser import MetadataParser
 
 def setup_logging(verbose: bool = False):
     """Setup logging configuration."""
@@ -84,6 +86,11 @@ def main():
         action='store_true',
         help='Show what would be done without making changes'
     )
+    parser.add_argument(
+        '--limit',
+        type=int,
+        help='Limit the number of files to process for testing'
+    )
     
     args = parser.parse_args()
     
@@ -113,13 +120,18 @@ def main():
         logger.error("No audio files found to process")
         sys.exit(1)
     
+    # Apply limit if specified
+    if args.limit and args.limit < len(audio_files):
+        audio_files = audio_files[:args.limit]
+        logger.info(f"Limited to {args.limit} files for testing")
+    
     logger.info(f"Processing {len(audio_files)} audio files")
     
     try:
         # Initialize components
-        completer = MetadataCompleter()
-        extractor = MetadataExtractor()
-        writer = MetadataWriter() if args.write else None
+        metadata_service = MetadataService()
+        metadata_parser = MetadataParser()
+        writer = MutagenWriter() if args.write else None
         
         results = {}
         
@@ -128,8 +140,8 @@ def main():
             
             if args.dry_run:
                 # For dry run, just extract current metadata and show missing fields
-                current_metadata = extractor.extract_metadata(file_path)
-                missing_fields = extractor.get_missing_metadata_fields(current_metadata)
+                current_metadata = metadata_parser.extract_metadata(file_path)
+                missing_fields = []  # TODO: implement missing field detection
                 
                 results[file_path] = {
                     'current_metadata': current_metadata,
@@ -146,13 +158,19 @@ def main():
                 
             else:
                 # Complete metadata
-                completed_metadata = completer.complete_metadata(file_path)
-                results[file_path] = completed_metadata
-                
-                # Write metadata if requested
-                if args.write and writer:
-                    success = writer.write_metadata(file_path, completed_metadata, create_backup)
-                    results[file_path]['write_success'] = success
+                try:
+                    completed_metadata = metadata_service.process_file(file_path)
+                    results[file_path] = completed_metadata
+                    
+                    # Write metadata if requested
+                    if args.write and writer:
+                        # Convert to format expected by writer
+                        success = writer.write_metadata(file_path, completed_metadata, create_backup)
+                        results[file_path]['write_success'] = success
+                        
+                except Exception as e:
+                    logger.error(f"Error processing {file_path}: {e}")
+                    results[file_path] = {'error': str(e)}
         
         # Save results to JSON if requested
         if args.output:
