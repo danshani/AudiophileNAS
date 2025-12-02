@@ -1,4 +1,6 @@
-# Python
+# ===========================
+# Standard Python & Environment
+# ===========================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -25,17 +27,19 @@ venv/
 env/
 ENV/
 
-# IDE
+# ===========================
+# IDE & OS Settings
+# ===========================
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
 
-# Project Specific
+# ===========================
+# Legacy / Metadata Project Files
+# ===========================
 *.backup
 test_results*.json
 *_results.json
@@ -45,26 +49,42 @@ jazz_zoo*.json
 shiwa_results.json
 final_genre_test.json
 final_complete_results.json
+audio_analysis_report.json
+scan_report.json
 
-# Audio files (uncomment if you don't want to track test audio)
-# *.flac
-# *.mp3
-# *.wav
-# *.m4a
-# *.ogg
-
-# Logs
+# Logs & Temp
 *.log
 logs/
-
-# Temporary files
 *.tmp
 *.temp
-
-# Test outputs
 test_output/
 results/
 
-# Old analysis outputs
-audio_analysis_report.json
-scan_report.json
+# ===========================
+# NEW: AI Training Workspace (Heavy Files)
+# ===========================
+# התעלמות מכל תיקיות הדאטה שנוצרו (כדי לא להעלות GB לגיט)
+training_workspace/dataset/
+training_workspace/dataset_fma_processed/
+training_workspace/dataset_hf_processed/
+training_workspace/temp_audio/
+training_workspace/source_music/
+
+# התעלמות מקבצי המידע המעובדים (מטריצות כבדות)
+*.npy
+
+# ===========================
+# Models & Checkpoints
+# ===========================
+# אנו מתעלמים מקבצי אימון זמניים וכבדים (Keras Checkpoints)
+*.keras
+*.h5
+*.ckpt
+checkpoint
+
+# הערה: קובץ ה-tflite הסופי (1.6MB) לא נחסם, כדי שיעבור ל-Pi.
+
+# ===========================
+# Operational Folders
+# ===========================
+quarantine/
