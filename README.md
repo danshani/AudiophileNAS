@@ -45,8 +45,8 @@ else:
 
 ### Command Line Interface
 ```bash
-# Process a directory with metadata completion
-cd features/audio-repair/metadata
+# Process a directory with metadata completion (add your own test files first)
+cd features/audio-repair/metadata  
 python -m cli.commands ../test_audio --write --verbose
 
 # Dry run (see what would be changed)
