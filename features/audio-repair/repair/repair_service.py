@@ -3,7 +3,13 @@ import shutil
 import logging
 from pathlib import Path
 from typing import Optional
-from .tools.denoiser import AudioDenoiser
+# --- Import Fix for running as service ---
+try:
+    # נסיון לייבוא יחסי (עובד כחלק מחבילה)
+    from .tools.denoiser import AudioDenoiser
+except ImportError:
+    # נסיון לייבוא מוחלט (עובד כשהתיקייה ב-sys.path)
+    from tools.denoiser import AudioDenoiser
 
 class RepairService:
     """
