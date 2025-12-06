@@ -7,6 +7,7 @@ import logging
 import subprocess
 import numpy as np
 import librosa
+from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -20,23 +21,33 @@ except ImportError:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "..", "..", ".."))
 
+# Paths to modules (Fixing imports)
+REPAIR_MODULE_PATH = os.path.join(PROJECT_ROOT, "features", "audio-repair", "repair")
+sys.path.append(REPAIR_MODULE_PATH)
+
+# Try Importing Repair Service
+try:
+    from repair_service import RepairService
+    REPAIR_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Could not import RepairService: {e}")
+    REPAIR_AVAILABLE = False
+
 WATCH_DIR = os.path.join(PROJECT_ROOT, "downloads")
 QUARANTINE_DIR = os.path.join(PROJECT_ROOT, "quarantine")
 MODEL_PATH = os.path.join(BASE_DIR, "..", "models", "audio_quality.tflite")
 DB_PATH = os.path.join(BASE_DIR, "scan_history.db")
-
-# Path to your existing Metadata CLI script
 METADATA_CLI_PATH = os.path.join(PROJECT_ROOT, "features", "audio-repair", "metadata", "cli", "commands.py")
 
 NOISE_THRESHOLD = 0.5 
 
-# Logging setup (Force UTF-8 for Windows)
+# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - [Scanner] - %(message)s',
     handlers=[
         logging.FileHandler("scanner.log", encoding='utf-8'),
-        logging.StreamHandler(sys.stdout) # Ensure stdout handles encoding correctly
+        logging.StreamHandler(sys.stdout)
     ]
 )
 
@@ -56,7 +67,8 @@ class Database:
                 is_clean INTEGER,
                 noise_score REAL,
                 scan_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                metadata_status TEXT
+                metadata_status TEXT,
+                repair_status TEXT
             )
         ''')
         self.conn.commit()
@@ -66,21 +78,25 @@ class Database:
         cursor.execute("SELECT id FROM scans WHERE filepath = ?", (filepath,))
         return cursor.fetchone() is not None
 
-    def add_result(self, filepath, is_clean, score, metadata_status="PENDING"):
+    def add_result(self, filepath, is_clean, score):
         try:
             cursor = self.conn.cursor()
             cursor.execute(
-                "INSERT INTO scans (filename, filepath, is_clean, noise_score, metadata_status) VALUES (?, ?, ?, ?, ?)",
-                (os.path.basename(filepath), filepath, 1 if is_clean else 0, score, metadata_status)
+                "INSERT INTO scans (filename, filepath, is_clean, noise_score, metadata_status, repair_status) VALUES (?, ?, ?, ?, ?, ?)",
+                (os.path.basename(filepath), filepath, 1 if is_clean else 0, score, "PENDING", "NONE")
             )
             self.conn.commit()
         except sqlite3.IntegrityError:
             pass
 
-    def update_metadata_status(self, filepath, status):
-        cursor = self.conn.cursor()
-        cursor.execute("UPDATE scans SET metadata_status = ? WHERE filepath = ?", (status, filepath))
-        self.conn.commit()
+    def update_status(self, filepath, col, status):
+        try:
+            cursor = self.conn.cursor()
+            query = f"UPDATE scans SET {col} = ? WHERE filepath = ?"
+            cursor.execute(query, (status, filepath))
+            self.conn.commit()
+        except Exception as e:
+            logging.error(f"DB Update failed: {e}")
 
 # --- AI Predictor ---
 class AudioPredictor:
@@ -97,7 +113,6 @@ class AudioPredictor:
     def preprocess(self, file_path):
         try:
             duration = 3.0
-            # Load only 10s to be fast
             y, sr = librosa.load(file_path, sr=22050, duration=10.0)
             target_len = int(22050 * duration)
             
@@ -130,103 +145,96 @@ class AudioPredictor:
 
 # --- Subprocess Integration ---
 def run_metadata_repair(file_path):
-    """
-    Runs the metadata CLI tool as a subprocess.
-    Now simpler because commands.py handles its own paths.
-    """
     if not os.path.exists(METADATA_CLI_PATH):
-        logging.error(f"Metadata CLI not found at: {METADATA_CLI_PATH}")
+        logging.error(f"Metadata CLI missing")
         return False
 
     logging.info(f"[METADATA] Launching repair process for: {os.path.basename(file_path)}")
+    cli_dir = os.path.dirname(METADATA_CLI_PATH)
+    script_name = os.path.basename(METADATA_CLI_PATH)
     
-    # הפקודה הפשוטה ביותר
-    cmd = [
-        sys.executable,
-        METADATA_CLI_PATH,
-        file_path,
-        "--write",
-        "--backup"
-    ]
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    cmd = [sys.executable, script_name, os.path.abspath(file_path), "--write", "--backup"]
 
     try:
-        # פשוט מריצים. בלי cwd ובלי משחקי סביבה.
-        result = subprocess.run(
-            cmd, 
-            capture_output=True, 
-            text=True, 
-            encoding='utf-8'
-        )
-        
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', cwd=cli_dir, env=env)
         if result.returncode == 0:
-            # חילוץ מידע רלוונטי מהלוג
-            output_lines = result.stdout.strip().split('\n')
-            # מחפש שורות מעניינות להצגה
-            summary = [line for line in output_lines if "Metadata completed" in line or "Success" in line]
-            log_msg = summary[-1] if summary else "Repair Finished"
-            
-            logging.info(f"[METADATA] Success! {log_msg}")
+            logging.info(f"[METADATA] Success!")
             return True
         else:
-            logging.warning(f"[METADATA] Process failed.\nError: {result.stderr.strip()}")
+            logging.warning(f"[METADATA] Process failed: {result.stderr.strip()}")
             return False
-            
     except Exception as e:
-        logging.error(f"[METADATA] Execution error: {e}")
+        logging.error(f"[METADATA] Error: {e}")
         return False
 
 # --- Watchdog Handler ---
 class NewFileHandler(FileSystemEventHandler):
-    def __init__(self, db, predictor):
+    def __init__(self, db, predictor, repair_service):
         self.db = db
         self.predictor = predictor
+        self.repair_service = repair_service
 
     def on_created(self, event):
         if event.is_directory: return
         filename = event.src_path
         if not filename.lower().endswith(('.mp3', '.flac', '.wav', '.m4a')): return
-        time.sleep(1) # Wait for file copy
+        time.sleep(1) 
         self.process_file(filename)
 
     def process_file(self, filepath):
         if self.db.is_scanned(filepath):
-            logging.info(f"Skipping known file: {os.path.basename(filepath)}")
+            logging.info(f"Skipping known: {os.path.basename(filepath)}")
             return
 
-        logging.info(f"Analyzing: {os.path.basename(filepath)}...")
+        logging.info(f"🔍 Analyzing: {os.path.basename(filepath)}...")
         
-        # 1. AI Check
+        # 1. AI Analysis
         score = self.predictor.predict(filepath)
         is_clean = score < NOISE_THRESHOLD
         
-        status_icon = '[CLEAN]' if is_clean else '[DIRTY]'
-        logging.info(f"   Score: {score:.4f} | Status: {status_icon}")
-        
+        status_msg = '[CLEAN]' if is_clean else '[DIRTY]'
+        logging.info(f"   Score: {score:.4f} | Status: {status_msg}")
+        self.db.add_result(filepath, is_clean, score)
+
         # 2. Decision Logic
         if is_clean:
-            self.db.add_result(filepath, is_clean, score, "PROCESSING")
-            
-            # 3. Run Metadata Repair
-            success = run_metadata_repair(filepath)
-            
-            if success:
-                self.db.update_metadata_status(filepath, "COMPLETED")
+            # Happy Path: Metadata Repair
+            if run_metadata_repair(filepath):
+                self.db.update_status(filepath, "metadata_status", "COMPLETED")
             else:
-                self.db.update_metadata_status(filepath, "FAILED")
-                
+                self.db.update_status(filepath, "metadata_status", "FAILED")
         else:
-            # Quarantine
-            self.db.add_result(filepath, is_clean, score, "QUARANTINED")
-            self.move_to_quarantine(filepath)
+            # Dirty Path: Quarantine -> Repair
+            self.db.update_status(filepath, "repair_status", "NEEDED")
+            quarantined_path = self.move_to_quarantine(filepath)
+            
+            if quarantined_path and self.repair_service:
+                logging.info(f"🚑 Attempting Auto-Repair on: {os.path.basename(quarantined_path)}")
+                
+                # הפעלת תיקון (FFmpeg Denoiser)
+                # הקובץ המתוקן יישמר חזרה בתיקיית ה-downloads
+                repaired_file = self.repair_service.repair_file(quarantined_path)
+                
+                if repaired_file:
+                    logging.info(f"✨ Repair Done! New file returned to cycle: {os.path.basename(repaired_file)}")
+                    self.db.update_status(filepath, "repair_status", "FIXED")
+                else:
+                    logging.error("❌ Repair failed.")
+                    self.db.update_status(filepath, "repair_status", "UNFIXABLE")
 
     def move_to_quarantine(self, filepath):
         try:
             if not os.path.exists(QUARANTINE_DIR): os.makedirs(QUARANTINE_DIR)
             dest = os.path.join(QUARANTINE_DIR, os.path.basename(filepath))
             shutil.move(filepath, dest)
-            logging.warning(f"   [MOVED] File quarantined: {dest}")
+            logging.warning(f"   [MOVED] To Quarantine: {dest}")
+            return dest
         except Exception as e:
             logging.error(f"Failed to quarantine: {e}")
+            return None
 
 # --- Main ---
 if __name__ == "__main__":
@@ -234,21 +242,29 @@ if __name__ == "__main__":
 
     db = Database()
     
-    # Initialize AI
     try:
         predictor = AudioPredictor(MODEL_PATH)
     except Exception as e:
-        logging.critical(f"Failed to load AI model: {e}")
+        logging.critical(f"AI Model Error: {e}")
         exit(1)
+
+    # Init Repair Service
+    repair_service = None
+    if REPAIR_AVAILABLE:
+        try:
+            logging.info("Initializing Repair Service...")
+            # הפלט של התיקון חוזר לתיקיית ההורדות כדי להיסרק שוב!
+            repair_service = RepairService(quarantine_dir=QUARANTINE_DIR, output_dir=WATCH_DIR)
+        except Exception as e:
+            logging.error(f"Repair Init Failed: {e}")
+
+    # Start
+    event_handler = NewFileHandler(db, predictor, repair_service)
+    observer = Observer()
+    observer.schedule(event_handler, WATCH_DIR, recursive=True)
 
     logging.info(f"[STARTED] Scanner Service is running!")
     logging.info(f"   Watching: {WATCH_DIR}")
-    logging.info(f"   Metadata CLI: {METADATA_CLI_PATH}")
-
-    # Start Watchdog
-    event_handler = NewFileHandler(db, predictor)
-    observer = Observer()
-    observer.schedule(event_handler, WATCH_DIR, recursive=True)
     
     # Initial Scan
     logging.info("--- Initial Scan ---")
