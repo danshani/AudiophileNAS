@@ -1,4 +1,0 @@
-# Requirements for metadata functionality
-requests>=2.28.0
-mutagen>=1.46.0
-python-musicbrainzngs>=0.7.1
