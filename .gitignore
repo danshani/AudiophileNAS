@@ -88,3 +88,10 @@ checkpoint
 # Operational Folders
 # ===========================
 quarantine/
+# ===========================
+# AudiophileNAS Specific
+# ===========================
+organized_library/
+library.db
+*.log
+.beets/

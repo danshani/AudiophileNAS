@@ -1,0 +1,13 @@
+directory: C:\Users\dansh\pyProjects\AudiophileNAS\AudiophileNAS\organized_library
+library: library.db
+
+import:
+    move: yes
+    write: yes
+
+plugins: fetchart embedart
+
+paths:
+    default: $albumartist/$album%aunique{}/$track $title
+    singleton: Non-Album/$artist/$title
+    comp: Compilations/$album%aunique{}/$track $title
